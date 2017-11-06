@@ -1,38 +1,56 @@
 "use strict";
 
-const fs = require('fs');
-
-if (process.argv.length < 4){
+if (process.argv.length < 4) {
 	console.log("Usage: node Convert.js [input.jkl] [output.obj]");
 	return;
 }
 
-var level = process.argv[2];
-var output = process.argv[3];
+const fs = require('fs');
+const minimist = require('minimist');
+
+const argv = minimist(process.argv.slice(2));
+
+const level = argv['_'][0];
+const output = argv['_'][1];
 
 fs.readFile(level, (err, data) => {
 
-	if (err){
+	if (err) {
 		return console.error(err);
 	}
 
-	var geoData = geoParse(data);
+	const geoData = geoParse(data);
+
+	addSections(data, geoData);
 
 	generateObj(geoData);
 
 });
 
-function generateObj(geoData){
+class LevelData {
+	constructor() {
 
-	var finalVerts = new Set();
+		this.verts = [];
+		this.uvs = [];
+		this.faces = [];
+		this.palette = [];
+		this.normals = [];
+		/** @type {Array<{start: Number, count: Number}>} */
+		this.sectors = [];
+	}
+}
 
-	var finalFaces = geoData.faces.filter((face) => {
+function generateObj(geoData) {
+
+	let finalVerts = new Set();
+
+	const finalFaces = geoData.faces.filter((face) => {
 		return face.adj === -1; //We only want non adjoin faces.
 	});
 
 	finalFaces.forEach((face) => {
 		face.verts.forEach((vert) => {
-			if (!finalVerts.has(vert)){
+			if (!finalVerts.has(vert)) {
 				finalVerts.add(vert);
 			}
 		});
@@ -40,39 +58,59 @@ function generateObj(geoData){
 
 	finalVerts = Array.from(finalVerts); //Convert to array so we have an order
 
+	const out = fs.createWriteStream(output);
+
 	//Save the vertices to the file, it can write while we work.
-	fs.writeFile(output, finalVerts.map((vert) => {
+	out.write(finalVerts.map((vert) => {
 		return 'v ' + geoData.verts[vert[0]].join(' '); //Accumulate vertices from indexes.
 	}).join('\n') + '\n\n', (err) => {
-		if (err){
-			console.error("Failed to write verts", err);
+		if (err) {
+			throw err;
 		}
 	});
 
-	var searchVerts = finalVerts.reduce((ret, val, index) => { //Make a searchable version.
+	const searchVerts = finalVerts.reduce((ret, val, index) => { //Make a searchable version.
 		ret[val[0]] = index + 1; //Obj files use 1 for the start of their lists.
 		return ret;
 	}, {});
 
 	//Write out all of the normals.
-	fs.appendFile(output, finalFaces.map((face) => {
+	out.write(finalFaces.map((face) => {
 		return 'vn ' + geoData.normals[face.index].join(' ');
 	}).join('\n') + '\n\n', (err) => {
-		if (err){
-			console.error("Failed to write normals", err);
+		if (err) {
+			throw err;
 		}
 	});
 
-	//Write out all of the faces.
-	fs.appendFile(output, finalFaces.map((face, index) => {
-		return 'f ' + face.verts.map((vert) => {
-			return searchVerts[vert[0]] + '//' + (index + 1); //Convert to new index and add the normal with its position (its equal to the face index + 1)
-		}).join(' ');
-	}).join('\n') + '\n\n', (err) => {
-		if (err){
-			console.error("Failed to write faces", err);
+	let normalIndex = 0;
+
+	//Write out all of the sectors
+	geoData.sectors.forEach((sector, index) => {
+		out.write("o sector" + index + "\n");
+
+		for (let i = sector.start; i < sector.start + sector.count; ++i) {
+			if (geoData.faces[i].adj !== -1) {
+				continue; //Skip adjoin faces
+			}
+			out.write('f ' + geoData.faces[i].verts.map((vert) => {
+				return searchVerts[vert[0]] + '//' + (normalIndex + 1); //Convert to new index and add the normal with its position (its equal to the face index + 1)
+			}).join(' ') + '\n');
+			normalIndex++;
 		}
+		out.write("\n");
 	});
+
+	//Write out all of the faces.
+	// out.write(finalFaces.map((face, index) => {
+	// 	return 'f ' + face.verts.map((vert) => {
+	// 		return searchVerts[vert[0]] + '//' + (index + 1); //Convert to new index and add the normal with its position (its equal to the face index + 1)
+	// 	}).join(' ');
+	// }).join('\n') + '\n\n', (err) => {
+	// 	if (err) {
+	// 		throw err;
+	// 	}
+	// });
 
 	//Not capable of handling textures yet. (Need to convert the textures themselves.)
 
@@ -80,26 +118,27 @@ function generateObj(geoData){
 
 	//No lights in objs.
 
+	out.end();
 }
 
+/**
+ * Creates all of the geo data info
+ *
+ * @param data {string}
+ * @returns {LevelData}
+ */
 function geoParse(data) {
 	const geoReg = /SECTION: GEORESOURCE\s*([\w\s\-#\d:.,]+?)SECTION:/i;
-	var geo = geoReg.exec(data)[1].split('World');
+	const geo = geoReg.exec(data)[1].split('World');
 
-	var testReg = /^\s+(\w+)/m;
+	const testReg = /^\s+(\w+)/m;
 
-	var ret = {
-		verts: [],
-		uvs: [],
-		faces: [],
-		palette: [],
-		normals: []
-	};
+	const ret = new LevelData();
 
 	geo.forEach((val) => {
-		var subSec = (testReg.exec(val) || {})[1];
+		const subSec = (testReg.exec(val) || {})[1];
 		if (!subSec) return;
-		switch(subSec){
+		switch (subSec) {
 			case "vertices":
 				ret.verts = vertParser(val);
 				break;
@@ -121,57 +160,57 @@ function geoParse(data) {
 	return ret;
 }
 
-function vertParser(dat){
+function vertParser(dat) {
 	const vertReg = /\d+:\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g;
 
-	var m;
-	var verts = [];
+	let m;
+	const verts = [];
 
-	while(m = vertReg.exec(dat)){
+	while (m = vertReg.exec(dat)) {
 		verts.push([Number(m[1]), Number(m[2]), Number(m[3])]);
 	}
 
 	return verts;
 }
 
-function uvParser(dat){
+function uvParser(dat) {
 	const uvReg = /\d+:\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g;
 
-	var m;
-	var uvs = [];
+	let m;
+	const uvs = [];
 
-	while(m = uvReg.exec(dat)){
+	while (m = uvReg.exec(dat)) {
 		uvs.push([Number(m[1]), Number(m[2])]);
 	}
 
 	return uvs;
 }
 
-function paletteParser(dat){
+function paletteParser(dat) {
 	const paletteReg = /\d+:\s+(\d+\w+\.cmp)/g;
 
-	var m;
-	var palettes = [];
+	let m;
+	const palettes = [];
 
-	while(m = paletteReg.exec(dat)){
+	while (m = paletteReg.exec(dat)) {
 		palettes.push(m[1]); //Strings
 	}
 
 	return palettes;
 }
 
-function surfParser(dat){
+function surfParser(dat) {
 	//Ya, pretty gross, targets the index, material, texture, adjoin #, nverts, (verts list)
 	const surfaceReg = /(\d+):\s+(-?\d+)\s+[^\s]+\s+[^\s]+\s+\d+\s+\d+\s+(\d+)\s+(-?\d+)\s+\d+(?:\.\d+)?\s+(\d+)\s+((?:\d+,-?\d+\s+)+)(?:(?:\d+)?\.\d+\s+)+/g;
 
 	//We will need to do a second stage of parsing for verts.
 
-	var m;
-	var surfaces = [];
+	let m;
+	const surfaces = [];
 
-	while(m = surfaceReg.exec(dat)){
-		var nverts = Number(m[5]);
-		var surf = {
+	while (m = surfaceReg.exec(dat)) {
+		const nverts = Number(m[5]);
+		const surf = {
 			index: Number(m[1]),
 			mat: Number(m[2]),
 			tex: Number(m[3]),
@@ -183,7 +222,7 @@ function surfParser(dat){
 			return val.split(',').map(Number);
 		});
 
-		if (surf.verts.length !== nverts){
+		if (surf.verts.length !== nverts) {
 			console.warn("Vert length mismatch!");
 		}
 		// Intensity was impossible to convert to obj, so it was removed.
@@ -197,4 +236,15 @@ function surfParser(dat){
 	}
 
 	return surfaces;
+}
+
+function addSections(data, levelData) {
+	const sectionReg = /SURFACES\s+(\d+)\s+(\d+)/g;
+
+	let m;
+
+	while (m = sectionReg.exec(data)) {
+		levelData.sectors.push({start: Number(m[1]), count: Number(m[2])});
+	}
+
 }

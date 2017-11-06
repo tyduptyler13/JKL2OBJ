@@ -1,0 +1,10 @@
+{
+  "name": "JKL2OBJ",
+  "description": "Converts JKL files and associated resources to obj files",
+  "version": "1.0.0",
+  "dependencies": {
+    "async": "^2.5.0",
+    "binary-parser": "^1.3.0",
+    "minimist": "^1.2.0"
+  }
+}

@@ -39,4 +39,10 @@ jspm_packages
 #custom ignores
 *.obj
 *.png
+*.blend
+*.pgm
 
+#intellij
+.idea
+*.iml
+.settings
