@@ -3,11 +3,8 @@
 const fs = require('fs');
 const Parser = require('binary-parser').Parser;
 
-var textureDataParser = function(textures, buffer){
-
-	var memo = {};
-
-	var p = new Parser()
+function textureDataParser(textures, buffer){
+	const p = new Parser()
 	.array('textureData', {
 		type: Parser.start()
 			.endianess('little')
@@ -23,7 +20,7 @@ var textureDataParser = function(textures, buffer){
 				length: function(){return this.sizeX * this.sizeY;}
 			})
 			.skip(function(){ //We don't care even a little about mipmaps. Opengl will do a better job.
-				var len = 0;
+				let len = 0;
 				for (let i = 1; i < this.mipMaps; ++i){
 					len += this.sizeX * this.sizeY / Math.pow(2, i);
 				}
@@ -33,11 +30,10 @@ var textureDataParser = function(textures, buffer){
 	});
 
 	return p.parse(buffer);
-
 }
 
-var textureParser = function(textures, buffer){
-	var p = new Parser()
+function textureParser(textures, buffer){
+	const p = new Parser()
 	.array('textures', {
 		type: Parser.start()
 			.endianess('little')
@@ -68,14 +64,14 @@ var textureParser = function(textures, buffer){
 	.array('data', {
 		type: 'uint8',
 		readUntil: 'eof',
-		formatter: (a) => Buffer(a)
+		formatter: (a) => new Buffer(a)
 	});
 	return p.parse(buffer);
 }
 
-var colorParser = new Parser();
+const colorParser = new Parser();
 
-var headerParser = new Parser()
+const headerParser = new Parser()
 .endianess('little')
 .string('MAT', {
 	length: 4
@@ -105,16 +101,16 @@ var headerParser = new Parser()
 .array('data', {
 	type: 'uint8',
 	readUntil: 'eof',
-	formatter: (a) => Buffer(a)
+	formatter: (a) => new Buffer(a)
 });
 
 function importMAT(file){
 	return new Promise((resolve, reject)=>{
-		fs.readFile(process.argv[2], function(err, data){
+		fs.readFile(file, function(err, data){
 			try {
-				var header = headerParser.parse(data);
-				var textures = textureParser(header.numTex, header.data);
-				var textureData = textureDataParser(header.numTex, textures.data);
+				const header = headerParser.parse(data);
+				const textures = textureParser(header['numTex'], header.data);
+				const textureData = textureDataParser(header['numTex'], textures.data);
 				resolve(textureData);
 			} catch(e) {
 				reject(e);
@@ -124,22 +120,21 @@ function importMAT(file){
 }
 
 function exportPGM(filename, data) {
-
 	return new Promise((resolve, reject)=>{
 		data.textureData.forEach((texture, index) => {
 			//console.log(texture);
-			var data =
+			const data =
 				[
 					"P2",
-					texture.sizeX,
-					texture.sizeY,
+					texture['sizeX'],
+					texture['sizeY'],
 					255
 				].join('\n') + '\n' +
 				texture.data.map((pixel) => {
 					return pixel.toString();
 				}).join(' ');
 
-			fs.writeFile(outputRoot + "-" + index + ".pgm", data, "ascii", function(err){
+			fs.writeFile(filename + "-" + index + ".pgm", data, "ascii", function(err){
 				if (err){
 					reject(err);
 				}
@@ -148,7 +143,22 @@ function exportPGM(filename, data) {
 			});
 		});
 	});
+}
+
+if (require.main !== module) { //Dependency
+	module.exports = {exportPGM: exportPGM, importMAT: importMAT};
+} else { //Called directly
+	if (process.argv.length < 4) {
+		console.log("Usage: node MATParser.js [texture] [outFileRoot] -c (color map)\n" +
+			"\n" +
+			"* Texture is the texture file (a mat file)\n" +
+			"* outFileRoot is the root of where the output will be placed " +
+			"which could include part of a file name. ex: /test/out could " +
+			"result in /test/out-0.pgm and /test/out-1.pgm");
+	}
+
+	const argv = require('minimist')(process.argv.slice(2));
+
 
 }
 
-module.exports = {exportPGM: exportPGM, importMAT: importMat};

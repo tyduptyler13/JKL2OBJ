@@ -40,11 +40,11 @@ class LevelData {
 	}
 }
 
-function generateObj(geoData) {
+function generateObj(levelData) {
 
 	let finalVerts = new Set();
 
-	const finalFaces = geoData.faces.filter((face) => {
+	const finalFaces = levelData.faces.filter((face) => {
 		return face.adj === -1; //We only want non adjoin faces.
 	});
 
@@ -62,7 +62,7 @@ function generateObj(geoData) {
 
 	//Save the vertices to the file, it can write while we work.
 	out.write(finalVerts.map((vert) => {
-		return 'v ' + geoData.verts[vert[0]].join(' '); //Accumulate vertices from indexes.
+		return 'v ' + levelData.verts[vert[0]].join(' '); //Accumulate vertices from indexes.
 	}).join('\n') + '\n\n', (err) => {
 		if (err) {
 			throw err;
@@ -76,7 +76,7 @@ function generateObj(geoData) {
 
 	//Write out all of the normals.
 	out.write(finalFaces.map((face) => {
-		return 'vn ' + geoData.normals[face.index].join(' ');
+		return 'vn ' + levelData.normals[face.index].join(' ');
 	}).join('\n') + '\n\n', (err) => {
 		if (err) {
 			throw err;
@@ -86,31 +86,20 @@ function generateObj(geoData) {
 	let normalIndex = 0;
 
 	//Write out all of the sectors
-	geoData.sectors.forEach((sector, index) => {
+	levelData.sectors.forEach((sector, index) => {
 		out.write("o sector" + index + "\n");
 
 		for (let i = sector.start; i < sector.start + sector.count; ++i) {
-			if (geoData.faces[i].adj !== -1) {
+			if (levelData.faces[i].adj !== -1) {
 				continue; //Skip adjoin faces
 			}
-			out.write('f ' + geoData.faces[i].verts.map((vert) => {
+			out.write('f ' + levelData.faces[i].verts.map((vert) => {
 				return searchVerts[vert[0]] + '//' + (normalIndex + 1); //Convert to new index and add the normal with its position (its equal to the face index + 1)
 			}).join(' ') + '\n');
 			normalIndex++;
 		}
 		out.write("\n");
 	});
-
-	//Write out all of the faces.
-	// out.write(finalFaces.map((face, index) => {
-	// 	return 'f ' + face.verts.map((vert) => {
-	// 		return searchVerts[vert[0]] + '//' + (index + 1); //Convert to new index and add the normal with its position (its equal to the face index + 1)
-	// 	}).join(' ');
-	// }).join('\n') + '\n\n', (err) => {
-	// 	if (err) {
-	// 		throw err;
-	// 	}
-	// });
 
 	//Not capable of handling textures yet. (Need to convert the textures themselves.)
 
