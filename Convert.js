@@ -8,6 +8,8 @@ if (process.argv.length < 4) {
 const fs = require('fs');
 const minimist = require('minimist');
 
+const Parser = require('./Parser.js');
+
 const argv = minimist(process.argv.slice(2));
 
 const level = argv['_'][0];
@@ -129,7 +131,7 @@ function geoParse(data) {
 		if (!subSec) return;
 		switch (subSec) {
 			case "vertices":
-				ret.verts = vertParser(val);
+				ret.verts = vertParser2(val);
 				break;
 			case "texture":
 				ret.uvs = uvParser(val);
@@ -149,17 +151,24 @@ function geoParse(data) {
 	return ret;
 }
 
-function vertParser(dat) {
-	const vertReg = /\d+:\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g;
-
-	let m;
-	const verts = [];
-
-	while (m = vertReg.exec(dat)) {
-		verts.push([Number(m[1]), Number(m[2]), Number(m[3])]);
+class Vertex {
+	constructor(x, y, z) {
+		this.x = Number(x);
+		this.y = Number(y);
+		this.z = Number(z);
+		this.pos = null; //Used in the final offset calculation
 	}
+}
 
-	return verts;
+function vertParser2(data) {
+	return new Parser.Builder()
+		.withRegex(/\d+:\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)
+		.withGroup('x')
+		.withGroup('y')
+		.withGroup('z')
+		.bake()
+		.parse(data)
+		.map((vert) => {return new Vertex(vert.get('x'), vert.get('y'), vert.get('z'))});
 }
 
 function uvParser(dat) {
